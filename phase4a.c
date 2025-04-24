@@ -5,6 +5,7 @@
  *This phase implements device drivers for the clock and terminal devices.
  * It includes system calls for Sleep(), TermRead(), and TermWrite(),
  * along with interrupt handling and process synchronization
+ *
  * */
 
 #include <phase1.h>
@@ -230,11 +231,12 @@ void sleepHandler(USLOSS_Sysargs *args) {
     return;
   }
   int pid = getpid();
-  int wakeupTick = clockTicks + (seconds * 10); // 10 ticks per second
+  int wakeupTick = clockTicks + (seconds * 10);
   enqueueSleepRequest(pid, wakeupTick);
   blockMe();
   args->arg4 = (void *)(long)0;
 }
+
 // Helpers
 
 // Inserts a new sleep request into the queue in ascending order by wakeup time
@@ -244,7 +246,6 @@ void enqueueSleepRequest(int pid, int wakeupTime) {
   newReq->wakeupTime = wakeupTime;
   newReq->next = NULL;
 
-  // Insert at the front if queue is empty or for equal/earlier tick
   if (sleepQueue == NULL || sleepQueue->wakeupTime >= wakeupTime) {
     newReq->next = sleepQueue;
     sleepQueue = newReq;
