@@ -23,7 +23,7 @@
 #define MAX_LINE_LENGTH 80
 
 typedef struct SleepRequest {
-  unsigned int wakeupTime;
+  int wakeupTime;
   int pid;
   struct SleepRequest *next;
 } SleepRequest;
@@ -31,6 +31,7 @@ typedef struct SleepRequest {
 // Globals
 SleepRequest *sleepQueue = NULL;
 int clockMailbox;
+int clockTicks = 0;
 
 int termWriteLock[4];
 int termReadMailbox[4];
@@ -49,7 +50,7 @@ int lineLen[4];
 
 // ProtoTypes
 void enqueueSleepRequest(int pid, int wakeupTime);
-void wakeUpProc(unsigned int currTime);
+void wakeUpProc();
 int ClockDriver(void *arg);
 int TerminalDriver(void *arg);
 void sleepHandler(USLOSS_Sysargs *args);
@@ -93,12 +94,10 @@ void phase4_init(void) {
 // expired
 int ClockDriver(void *arg) {
   int status;
-  unsigned int currTime;
-
   while (1) {
     waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, (int *)&currTime);
-    wakeUpProc(currTime);
+    clockTicks++;
+    wakeUpProc();
   }
   return 0;
 }
@@ -230,24 +229,12 @@ void sleepHandler(USLOSS_Sysargs *args) {
     args->arg4 = (void *)(long)-1;
     return;
   }
-
   int pid = getpid();
-  unsigned int currTime;
-  unsigned int wakeUpTime;
-
-  int retval = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, (int *)&currTime);
-  if (retval != USLOSS_DEV_OK) {
-    args->arg4 = (void *)(long)-1;
-    return;
-  }
-
-  wakeUpTime = currTime + ((unsigned long long)seconds * 1000000);
-
-  enqueueSleepRequest(pid, wakeUpTime);
+  int wakeupTick = clockTicks + (seconds * 10); // 10 ticks per second
+  enqueueSleepRequest(pid, wakeupTick);
   blockMe();
   args->arg4 = (void *)(long)0;
 }
-
 // Helpers
 
 // Inserts a new sleep request into the queue in ascending order by wakeup time
@@ -257,14 +244,15 @@ void enqueueSleepRequest(int pid, int wakeupTime) {
   newReq->wakeupTime = wakeupTime;
   newReq->next = NULL;
 
-  if (sleepQueue == NULL || sleepQueue->wakeupTime > wakeupTime) {
+  // Insert at the front if queue is empty or for equal/earlier tick
+  if (sleepQueue == NULL || sleepQueue->wakeupTime >= wakeupTime) {
     newReq->next = sleepQueue;
     sleepQueue = newReq;
     return;
   }
 
   SleepRequest *curr = sleepQueue;
-  while (curr->next && curr->next->wakeupTime <= wakeupTime) {
+  while (curr->next && curr->next->wakeupTime < wakeupTime) {
     curr = curr->next;
   }
   newReq->next = curr->next;
@@ -273,8 +261,8 @@ void enqueueSleepRequest(int pid, int wakeupTime) {
 
 // Unblocks and removes all processes from the sleep queue whose wakeup time has
 // passed
-void wakeUpProc(unsigned int currTime) {
-  while (sleepQueue != NULL && sleepQueue->wakeupTime <= currTime) {
+void wakeUpProc() {
+  while (sleepQueue && sleepQueue->wakeupTime <= clockTicks) {
     SleepRequest *tmp = sleepQueue;
     sleepQueue = sleepQueue->next;
     unblockProc(tmp->pid);
