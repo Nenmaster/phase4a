@@ -15,7 +15,7 @@
 
 // ----- Globals and Structures -----
 typedef struct SleepRequest {
-  int wakeupTime;
+  unsigned int wakeupTime;
   int pid;
   struct SleepRequest *next;
 } SleepRequest;
@@ -40,7 +40,7 @@ int lineLength[4];
 
 // prototypes
 void addSleepRequest(int pid, int wakeupTime);
-void checkWakeups();
+void checkWakeups(unsigned int currTime);
 int ClockDriver(void *arg);
 int TerminalDriver(void *arg);
 void sleepHandler(USLOSS_Sysargs *args);
@@ -88,10 +88,14 @@ void phase4_init(void) {
 
 int ClockDriver(void *arg) {
   int status;
+  unsigned int currTime;
+
   while (1) {
     waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-    clockTicks++;
-    checkWakeups();
+
+    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, (int *)&currTime);
+
+    checkWakeups(currTime);
   }
   return 0;
 }
@@ -473,8 +477,18 @@ void sleepHandler(USLOSS_Sysargs *args) {
   }
 
   int pid = getpid();
-  int wakeupTime = clockTicks + seconds * 10;
-  addSleepRequest(pid, wakeupTime);
+  unsigned int currTime;
+  unsigned int wakeUpTime;
+
+  int retval = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, (int *)&currTime);
+  if (retval != USLOSS_DEV_OK) {
+    args->arg4 = (void *)(long)-1;
+    return;
+  }
+
+  wakeUpTime = currTime + ((unsigned long long)seconds * 1000000);
+
+  addSleepRequest(pid, wakeUpTime);
   blockMe();
   args->arg4 = (void *)(long)0;
 }
@@ -500,8 +514,8 @@ void addSleepRequest(int pid, int wakeupTime) {
   curr->next = newReq;
 }
 
-void checkWakeups() {
-  while (sleepQueue && sleepQueue->wakeupTime <= clockTicks) {
+void checkWakeups(unsigned int currTime) {
+  while (sleepQueue != NULL && sleepQueue->wakeupTime <= currTime) {
     SleepRequest *tmp = sleepQueue;
     sleepQueue = sleepQueue->next;
     unblockProc(tmp->pid);
