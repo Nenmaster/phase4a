@@ -1,3 +1,12 @@
+/*
+ *
+ *Programmers: Omar Mendivil & Ayman Mohamed
+ *Phase3
+ *This phase implements device drivers for the clock and terminal devices.
+ * It includes system calls for Sleep(), TermRead(), and TermWrite(),
+ * along with interrupt handling and process synchronization
+ * */
+
 #include <phase1.h>
 #include <phase2.h>
 #include <phase3.h>
@@ -19,6 +28,7 @@ typedef struct SleepRequest {
   struct SleepRequest *next;
 } SleepRequest;
 
+// Globals
 SleepRequest *sleepQueue = NULL;
 int clockMailbox;
 
@@ -37,6 +47,7 @@ int writeWaiting[4];
 char lineBuff[4][MAX_LINE_LENGTH];
 int lineLen[4];
 
+// ProtoTypes
 void enqueueSleepRequest(int pid, int wakeupTime);
 void wakeUpProc(unsigned int currTime);
 int ClockDriver(void *arg);
@@ -78,20 +89,21 @@ void phase4_init(void) {
   }
 }
 
+// Waits for clock interrupts and wakes up any processes whose sleep time has
+// expired
 int ClockDriver(void *arg) {
   int status;
   unsigned int currTime;
 
   while (1) {
     waitDevice(USLOSS_CLOCK_DEV, 0, &status);
-
     USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, (int *)&currTime);
-
     wakeUpProc(currTime);
   }
   return 0;
 }
 
+// sends device status to terminal driver via mailbox
 void termHandler(int type, void *arg) {
   int unit = (int)(long)arg;
   int status;
@@ -99,6 +111,8 @@ void termHandler(int type, void *arg) {
   MboxCondSend(termInterruptMailbox[unit], &status, sizeof(int));
 }
 
+// Handles RECV and XMIT interrupts for one terminal and
+// buffers incoming characters and manages transmition
 int TerminalDriver(void *arg) {
   int unit = (int)(long)arg;
   int status;
@@ -153,6 +167,7 @@ int TerminalDriver(void *arg) {
   return 0;
 }
 
+// Sends a string to the terminal, one character at a time.
 void termWriteHandler(USLOSS_Sysargs *args) {
   char *buf = (char *)args->arg1;
   int len = (int)(long)args->arg2;
@@ -191,6 +206,7 @@ void termWriteHandler(USLOSS_Sysargs *args) {
   args->arg4 = (void *)(long)0;
 }
 
+// Delivers one full line from terminal input buffer to user.
 void termReadHandler(USLOSS_Sysargs *args) {
   char *buffer = (char *)args->arg1;
   int bufSize = (int)(long)args->arg2;
@@ -232,6 +248,9 @@ void sleepHandler(USLOSS_Sysargs *args) {
   args->arg4 = (void *)(long)0;
 }
 
+// Helpers
+
+// Inserts a new sleep request into the queue in ascending order by wakeup time
 void enqueueSleepRequest(int pid, int wakeupTime) {
   SleepRequest *newReq = malloc(sizeof(SleepRequest));
   newReq->pid = pid;
@@ -252,6 +271,8 @@ void enqueueSleepRequest(int pid, int wakeupTime) {
   curr->next = newReq;
 }
 
+// Unblocks and removes all processes from the sleep queue whose wakeup time has
+// passed
 void wakeUpProc(unsigned int currTime) {
   while (sleepQueue != NULL && sleepQueue->wakeupTime <= currTime) {
     SleepRequest *tmp = sleepQueue;
