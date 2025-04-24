@@ -40,7 +40,7 @@ int lineLength[4];
 
 // prototypes
 void addSleepRequest(int pid, int wakeupTime);
-void checkWakeups(unsigned int currTime);
+void checkWakeups();
 int ClockDriver(void *arg);
 int TerminalDriver(void *arg);
 void sleepHandler(USLOSS_Sysargs *args);
